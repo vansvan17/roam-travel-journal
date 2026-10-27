@@ -22,7 +22,7 @@ export function sampleTrips() {
     { id: uid(), title: 'Postcards from the coast', destination: 'Cinque Terre', country: 'Italy', startDate: '2026-08-05', endDate: '2026-08-11', status: 'Completed', budget: 95000, currency: 'INR', cover: 'italy', notes: 'Five villages, a thousand shades of blue.', itinerary: [], expenses: [{ id: uid(), title: 'Village guesthouse', amount: 34000, category: 'Stay', date: '2026-08-05' },{ id: uid(), title: 'Pasta, pesto & gelato', amount: 8500, category: 'Food', date: '2026-08-06' },{ id: uid(), title: 'Flights & train passes', amount: 38000, category: 'Transport', date: '2026-08-05' }], entries: [{ id: uid(), title: 'The long way is the right way', body: 'We missed the train and walked to the next village instead. Somewhere between the lemon trees and the sea, I stopped checking the time. That was the best part of the whole trip.', date: '2026-08-07', mood: 'Grateful' }] }
   ];
 }
-export const tripPayload = trip => Object.fromEntries(['title','destination','country','startDate','endDate','status','budget','currency','cover','notes','expenses','itinerary','entries'].map(k => [k, trip[k]]));
+export const tripPayload = trip => Object.fromEntries(['planStatus','title','destination','country','startDate','endDate','status','budget','currency','cover','notes','expenses','itinerary','entries'].map(k => [k, trip[k]]));
 export async function request(path, options = {}) {
   let res;
   try { res = await fetch(`/api${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers }, credentials: 'same-origin' }); }
