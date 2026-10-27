@@ -1,32 +1,226 @@
-import { test, before, after } from 'node:test';
-import assert from 'node:assert/strict';
-import { MongoMemoryServer } from 'mongodb-memory-server';
-import mongoose from 'mongoose';
-import request from 'supertest';
-import app from '../../server/app.js';
-import { User, Session } from '../../server/models.js';
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { MongoMemoryServer } from "mongodb-memory-server";
+import mongoose from "mongoose";
+import request from "supertest";
+import app from "../../server/app.js";
+import { User, Session } from "../../server/models.js";
 let mongo, alice, bob, tripId;
-const trip = {title:'A little escape',destination:'Goa',country:'India',startDate:'2026-11-01',endDate:'2026-11-05',status:'Upcoming',budget:20000,currency:'INR',cover:'coast',notes:'Ocean air',expenses:[],itinerary:[],entries:[]};
-before(async () => { mongo = await MongoMemoryServer.create(); process.env.MONGODB_URI = mongo.getUri('roam_test'); alice = request.agent(app); bob = request.agent(app); });
-after(async () => { await mongoose.disconnect(); await mongo?.stop(); });
-test('register, persist session, and keep password and session plaintext out of responses/storage',async () => { const res = await alice.post('/api/auth/register').send({name:'Alice',email:'alice@example.com',password:'test-only-passphrase'}); assert.equal(res.status,201); assert.equal(res.body.user.name,'Alice'); assert.equal(res.body.user.passwordHash,undefined); assert.match(res.headers['set-cookie'][0],/HttpOnly/); const me = await alice.get('/api/auth/me'); assert.equal(me.status,200); const stored = await User.findOne({email:'alice@example.com'}).select('+passwordHash'); assert.notEqual(stored.passwordHash,'test-only-passphrase'); const session = await Session.findOne({userId:stored._id}); assert.equal(session.tokenHash.length,64); assert.equal(session.token,undefined); });
-test('reject duplicate registration and incorrect password',async () => { assert.equal((await alice.post('/api/auth/register').send({name:'Alice',email:'alice@example.com',password:'test-only-passphrase'})).status,409); assert.equal((await request(app).post('/api/auth/login').send({email:'alice@example.com',password:'incorrect-password'})).status,401); });
-test('create a real MongoDB trip and load it back',async () => { const res = await alice.post('/api/trips').send(trip); assert.equal(res.status,201); tripId = res.body.trip.id; assert.equal(res.body.trip.userId,undefined); const list = await alice.get('/api/trips'); assert.equal(list.body.trips.length,1); assert.equal(list.body.trips[0].title,trip.title); });
-test('update itinerary, expenses, and journal atomically',async () => { const res = await alice.put(`/api/trips/${tripId}`).send({...trip,expenses:[{id:crypto.randomUUID(),title:'Coffee',amount:250,category:'Food',date:'2026-11-02'}],itinerary:[{id:crypto.randomUUID(),title:'Beach sunrise',day:2,time:'06:00',notes:'Bring camera'}],entries:[{id:crypto.randomUUID(),title:'Ocean air',body:'A perfect morning.',date:'2026-11-02',mood:'Grateful'}]}); assert.equal(res.status,200); const saved = await alice.get(`/api/trips/${tripId}`); assert.equal(saved.body.trip.expenses[0].amount,250); assert.equal(saved.body.trip.itinerary[0].title,'Beach sunrise'); assert.equal(saved.body.trip.entries[0].mood,'Grateful'); });
-test('another user cannot read, edit, or delete the trip',async () => { await bob.post('/api/auth/register').send({name:'Bob',email:'bob@example.com',password:'another-test-passphrase'}); assert.equal((await bob.get('/api/trips')).body.trips.length,0); assert.equal((await bob.get(`/api/trips/${tripId}`)).status,404); assert.equal((await bob.put(`/api/trips/${tripId}`).send(trip)).status,404); assert.equal((await bob.delete(`/api/trips/${tripId}`).send({})).status,404); });
-test('reject unauthenticated, cross-origin, and invalid requests',async () => { assert.equal((await request(app).get('/api/trips')).status,401); assert.equal((await alice.post('/api/trips').set('Origin','https://evil.example').send(trip)).status,403); assert.equal((await alice.post('/api/trips').send({...trip,budget:-1})).status,400); assert.equal((await alice.get('/api/trips/invalid-id')).status,400); });
-test('calendar export is scoped to the owner and uses persisted stops',async () => {
- const res=await alice.get(`/api/trips/${tripId}/calendar`);
- assert.equal(res.status,200);assert.match(res.headers['content-type'],/text\/calendar/);
- assert.match(res.text,/DTSTART:20261102T060000/);assert.match(res.text,/SUMMARY:Beach sunrise/);
- assert.equal((await bob.get(`/api/trips/${tripId}/calendar`)).status,404);
- assert.equal((await request(app).get(`/api/trips/${tripId}/calendar`)).status,401);
+const trip = {
+  title: "A little escape",
+  destination: "Goa",
+  country: "India",
+  startDate: "2026-11-01",
+  endDate: "2026-11-05",
+  status: "Upcoming",
+  budget: 20000,
+  currency: "INR",
+  cover: "coast",
+  notes: "Ocean air",
+  expenses: [],
+  itinerary: [],
+  entries: [],
+};
+before(async () => {
+  mongo = await MongoMemoryServer.create();
+  process.env.MONGODB_URI = mongo.getUri("roam_test");
+  alice = request.agent(app);
+  bob = request.agent(app);
 });
-test('invalid schedule and readiness updates cannot corrupt a saved trip',async () => {
- const conflict={...trip,itinerary:[{id:crypto.randomUUID(),title:'First stop',day:1,time:'09:00',durationMinutes:90,notes:''},{id:crypto.randomUUID(),title:'Conflicting stop',day:1,time:'10:00',durationMinutes:60,notes:''}]};
- assert.equal((await alice.put(`/api/trips/${tripId}`).send(conflict)).status,400);
- assert.equal((await alice.put(`/api/trips/${tripId}`).send({...trip,planStatus:'Ready'})).status,400);
- const saved=await alice.get(`/api/trips/${tripId}`);assert.equal(saved.body.trip.itinerary[0].title,'Beach sunrise');
+after(async () => {
+  await mongoose.disconnect();
+  await mongo?.stop();
 });
-test('delete, log out, and confirm session revocation',async () => { assert.equal((await alice.delete(`/api/trips/${tripId}`).send({})).status,200); assert.equal((await alice.get(`/api/trips/${tripId}`)).status,404); assert.equal((await alice.post('/api/auth/logout').send({})).status,200); assert.equal((await alice.get('/api/auth/me')).status,401); assert.equal((await request(app).post('/api/auth/login').send({email:'alice@example.com',password:'test-only-passphrase'})).status,200); });
-test('health endpoint verifies a database ping',async () => { const res = await request(app).get('/api/health'); assert.equal(res.status,200); assert.equal(res.body.database,'connected'); });
+test("register, persist session, and keep password and session plaintext out of responses/storage", async () => {
+  const res = await alice
+    .post("/api/auth/register")
+    .send({
+      name: "Alice",
+      email: "alice@example.com",
+      password: "test-only-passphrase",
+    });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.user.name, "Alice");
+  assert.equal(res.body.user.passwordHash, undefined);
+  assert.match(res.headers["set-cookie"][0], /HttpOnly/);
+  const me = await alice.get("/api/auth/me");
+  assert.equal(me.status, 200);
+  const stored = await User.findOne({ email: "alice@example.com" }).select(
+    "+passwordHash",
+  );
+  assert.notEqual(stored.passwordHash, "test-only-passphrase");
+  const session = await Session.findOne({ userId: stored._id });
+  assert.equal(session.tokenHash.length, 64);
+  assert.equal(session.token, undefined);
+});
+test("reject duplicate registration and incorrect password", async () => {
+  assert.equal(
+    (
+      await alice
+        .post("/api/auth/register")
+        .send({
+          name: "Alice",
+          email: "alice@example.com",
+          password: "test-only-passphrase",
+        })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await request(app)
+        .post("/api/auth/login")
+        .send({ email: "alice@example.com", password: "incorrect-password" })
+    ).status,
+    401,
+  );
+});
+test("create a real MongoDB trip and load it back", async () => {
+  const res = await alice.post("/api/trips").send(trip);
+  assert.equal(res.status, 201);
+  tripId = res.body.trip.id;
+  assert.equal(res.body.trip.userId, undefined);
+  const list = await alice.get("/api/trips");
+  assert.equal(list.body.trips.length, 1);
+  assert.equal(list.body.trips[0].title, trip.title);
+});
+test("update itinerary, expenses, and journal atomically", async () => {
+  const res = await alice
+    .put(`/api/trips/${tripId}`)
+    .send({
+      ...trip,
+      expenses: [
+        {
+          id: crypto.randomUUID(),
+          title: "Coffee",
+          amount: 250,
+          category: "Food",
+          date: "2026-11-02",
+        },
+      ],
+      itinerary: [
+        {
+          id: crypto.randomUUID(),
+          title: "Beach sunrise",
+          day: 2,
+          time: "06:00",
+          notes: "Bring camera",
+        },
+      ],
+      entries: [
+        {
+          id: crypto.randomUUID(),
+          title: "Ocean air",
+          body: "A perfect morning.",
+          date: "2026-11-02",
+          mood: "Grateful",
+        },
+      ],
+    });
+  assert.equal(res.status, 200);
+  const saved = await alice.get(`/api/trips/${tripId}`);
+  assert.equal(saved.body.trip.expenses[0].amount, 250);
+  assert.equal(saved.body.trip.itinerary[0].title, "Beach sunrise");
+  assert.equal(saved.body.trip.entries[0].mood, "Grateful");
+});
+test("another user cannot read, edit, or delete the trip", async () => {
+  await bob
+    .post("/api/auth/register")
+    .send({
+      name: "Bob",
+      email: "bob@example.com",
+      password: "another-test-passphrase",
+    });
+  assert.equal((await bob.get("/api/trips")).body.trips.length, 0);
+  assert.equal((await bob.get(`/api/trips/${tripId}`)).status, 404);
+  assert.equal((await bob.put(`/api/trips/${tripId}`).send(trip)).status, 404);
+  assert.equal((await bob.delete(`/api/trips/${tripId}`).send({})).status, 404);
+});
+test("reject unauthenticated, cross-origin, and invalid requests", async () => {
+  assert.equal((await request(app).get("/api/trips")).status, 401);
+  assert.equal(
+    (
+      await alice
+        .post("/api/trips")
+        .set("Origin", "https://evil.example")
+        .send(trip)
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await alice.post("/api/trips").send({ ...trip, budget: -1 })).status,
+    400,
+  );
+  assert.equal((await alice.get("/api/trips/invalid-id")).status, 400);
+});
+test("calendar export is scoped to the owner and uses persisted stops", async () => {
+  const res = await alice.get(`/api/trips/${tripId}/calendar`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers["content-type"], /text\/calendar/);
+  assert.match(res.text, /DTSTART:20261102T060000/);
+  assert.match(res.text, /SUMMARY:Beach sunrise/);
+  assert.equal((await bob.get(`/api/trips/${tripId}/calendar`)).status, 404);
+  assert.equal(
+    (await request(app).get(`/api/trips/${tripId}/calendar`)).status,
+    401,
+  );
+});
+test("invalid schedule and readiness updates cannot corrupt a saved trip", async () => {
+  const conflict = {
+    ...trip,
+    itinerary: [
+      {
+        id: crypto.randomUUID(),
+        title: "First stop",
+        day: 1,
+        time: "09:00",
+        durationMinutes: 90,
+        notes: "",
+      },
+      {
+        id: crypto.randomUUID(),
+        title: "Conflicting stop",
+        day: 1,
+        time: "10:00",
+        durationMinutes: 60,
+        notes: "",
+      },
+    ],
+  };
+  assert.equal(
+    (await alice.put(`/api/trips/${tripId}`).send(conflict)).status,
+    400,
+  );
+  assert.equal(
+    (
+      await alice
+        .put(`/api/trips/${tripId}`)
+        .send({ ...trip, planStatus: "Ready" })
+    ).status,
+    400,
+  );
+  const saved = await alice.get(`/api/trips/${tripId}`);
+  assert.equal(saved.body.trip.itinerary[0].title, "Beach sunrise");
+});
+test("delete, log out, and confirm session revocation", async () => {
+  assert.equal(
+    (await alice.delete(`/api/trips/${tripId}`).send({})).status,
+    200,
+  );
+  assert.equal((await alice.get(`/api/trips/${tripId}`)).status, 404);
+  assert.equal((await alice.post("/api/auth/logout").send({})).status, 200);
+  assert.equal((await alice.get("/api/auth/me")).status, 401);
+  assert.equal(
+    (
+      await request(app)
+        .post("/api/auth/login")
+        .send({ email: "alice@example.com", password: "test-only-passphrase" })
+    ).status,
+    200,
+  );
+});
+test("health endpoint verifies a database ping", async () => {
+  const res = await request(app).get("/api/health");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.database, "connected");
+});
