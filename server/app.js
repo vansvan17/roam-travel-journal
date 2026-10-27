@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { buildCalendar } from '../shared/calendar.js';
 import express from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -81,6 +82,12 @@ app.post('/api/trips', async (req, res) => {
   res.status(201).json({ trip: tripJSON(trip) });
 });
 app.param('id', (req, res, next, id) => { if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Invalid trip ID' }); next(); });
+app.get('/api/trips/:id/calendar', async (req, res) => {
+  const trip = await Trip.findOne({ _id: req.params.id, userId: req.user._id });
+  if (!trip) return res.status(404).json({ error: 'Trip not found' });
+  try { res.type('text/calendar').attachment('roam-itinerary.ics').send(buildCalendar(trip.toObject())); }
+  catch (error) { res.status(400).json({ error: error.message }); }
+});
 app.get('/api/trips/:id', async (req, res) => {
   const trip = await Trip.findOne({ _id: req.params.id, userId: req.user._id });
   if (!trip) return res.status(404).json({ error: 'Trip not found' });
