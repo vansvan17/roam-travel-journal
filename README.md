@@ -4,6 +4,10 @@ A complete MERN application for planning trips, keeping daily itineraries, recor
 
 **Live app:** https://roam-travel-journal-rosy.vercel.app
 
+**Production verified:** Connected to a free MongoDB Atlas cluster. Live registration, sign-in, trip creation, itinerary, expenses, journal entries, updates, and persistence after a fresh sign-in were verified on 27 October 2026. Disposable test records were removed.
+
+The production database uses a dedicated database-scoped login. Its connection URI is stored as a server-only Vercel Production secret. The approved network configuration permits IPv4 connections because the free Vercel deployment uses changing outbound addresses; database authentication and TLS are still required.
+
 ## Features
 
 - Registration and sign-in with salted scrypt password hashes
