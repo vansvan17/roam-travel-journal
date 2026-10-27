@@ -25,9 +25,12 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.4",
     "concurrently": "^9.2.1",
+    "esbuild": "^0.25.12",
     "mongodb-memory-server": "^10.2.1",
     "supertest": "^7.1.4",
     "vite": "^7.1.12"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22.15"
+  }
 }

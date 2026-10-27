@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   Compass,
   Heart,
+  Map,
   MapPin,
   Pencil,
   Plus,
