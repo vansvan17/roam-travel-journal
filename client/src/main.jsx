@@ -15,6 +15,7 @@ function App() {
     catch { if (sessionStorage.getItem(SESSION_KEY)) enterDemo(); }
     finally { setLoading(false); }
   })(); }, []);
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, selected]);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 4500); return () => clearTimeout(t); }, [toast]);
   function enterDemo() {
     let saved;
